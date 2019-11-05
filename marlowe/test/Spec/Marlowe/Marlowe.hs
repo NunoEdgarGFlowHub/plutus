@@ -67,7 +67,7 @@ getSignaturesTest :: IO ()
 getSignaturesTest = do
     let alicePk = walletPubKey alice
     let bobPk = walletPubKey bob
-    let deposit pk = IDeposit (AccountId 0 alicePk) pk (Ada.adaOf 256)
+    let deposit pk = IDeposit (AccountId 0 alicePk) pk "" "" 256_000000
     let choice pk = IChoice (ChoiceId "choice" pk) 23
     let sigs = AssocMap.toList . getSignatures
     [] @=? sigs []
@@ -89,11 +89,11 @@ zeroCouponBondTest = checkMarloweTrace (MarloweScenario {
         update = updateAll [alice, bob]
     update
 
-    let zeroCouponBond = When [ Case (Deposit aliceAcc alicePk (Constant 850_000_000))
-            (Pay aliceAcc (Party bobPk) (Constant 850_000_000)
+    let zeroCouponBond = When [ Case (Deposit aliceAcc alicePk "" "" (Constant 850_000_000))
+            (Pay aliceAcc (Party bobPk) "" "" (Constant 850_000_000)
                 (When
-                    [ Case (Deposit aliceAcc bobPk (Constant 1000_000_000))
-                        (Pay aliceAcc (Party alicePk) (Constant 1000_000_000) Close)
+                    [ Case (Deposit aliceAcc bobPk "" "" (Constant 1000_000_000))
+                        (Pay aliceAcc (Party alicePk) "" "" (Constant 1000_000_000) Close)
                     ] (Slot 200) Close
                 ))] (Slot 100) Close
 
@@ -122,9 +122,9 @@ trustFundTest = checkMarloweTrace (MarloweScenario {
     let contract = When [
             Case (Choice chId [Bound 100_000000 1500_000000])
                 (When [
-                    Case (Deposit aliceAcc alicePk (ChoiceValue chId (Constant 0)))
+                    Case (Deposit aliceAcc alicePk "" "" (ChoiceValue chId (Constant 0)))
                         (When [Case (Notify (SlotIntervalStart `ValueGE` Constant 150))
-                            (Pay aliceAcc (Party bobPk) (ChoiceValue chId (Constant 0)) Close)]
+                            (Pay aliceAcc (Party bobPk) "" "" (ChoiceValue chId (Constant 0)) Close)]
                         (Slot 300) Close)
                     ] (Slot 200) Close)
             ] (Slot 100) Close
@@ -133,7 +133,7 @@ trustFundTest = checkMarloweTrace (MarloweScenario {
     (tx, md) <- alice `performs` createContract contract
     (tx, md) <- alice `performs` applyInputs tx md
         [ IChoice chId 256_000000
-        , IDeposit aliceAcc alicePk (Ada.adaOf 256)]
+        , IDeposit aliceAcc alicePk "" "" 256_000000]
     addBlocksAndNotify [alice, bob] 150
     bob `performs` notify tx md
 
@@ -153,8 +153,8 @@ makeProgressTest = checkMarloweTrace (MarloweScenario {
     update
 
     let contract = If (SlotIntervalStart `ValueLT` Constant 10)
-            (When [Case (Deposit aliceAcc alicePk (Constant 500_000000))
-                    (Pay aliceAcc (Party bobPk) (AvailableMoney aliceAcc) Close)]
+            (When [Case (Deposit aliceAcc alicePk "" "" (Constant 500_000000))
+                    (Pay aliceAcc (Party bobPk) "" "" (AvailableMoney aliceAcc "" "") Close)]
                         (Slot 100) Close)
             Close
 
@@ -260,12 +260,12 @@ showReadStuff :: IO ()
 showReadStuff = do
     assertEqual "alice" (fromString "alice" :: PubKey) (read "\"alice\"")
     assertEqual "slot" (Slot 123) (read "123")
-    let contractString = "When [(Case (Deposit (AccountId 0 \"investor\") \"investor\" \
-        \(Constant 850)) (Pay (AccountId 0 \"investor\") (Party \"issuer\") (Constant 850) \
-        \(When [ (Case (Deposit (AccountId 0 \"investor\") \"issuer\" (Constant 1000)) \
-        \(Pay (AccountId 0 \"investor\") (Party \"investor\") (Constant 1000) Close))] \
-        \20 Close)))] 10 Close"
-    let contract :: Contract = read contractString
+    let contract = When [Case (Deposit (AccountId 0 "investor") "investor" "" ""
+            (Constant 850)) (Pay (AccountId 0 "investor") (Party "issuer") "" "" (Constant 850)
+            (When [Case (Deposit (AccountId 0 "investor") "issuer" "" "" (Constant 1000))
+            (Pay (AccountId 0 "investor") (Party "investor") "" "" (Constant 1000) Close)]
+            20 Close))] 10 Close
+
     let contract2 :: Contract = Let (ValueId "id") (Constant 12) Close
     assertEqual "Contract" contract ((read . show . pretty) contract)
     assertEqual "ValueId"  contract2 (read "Let \"id\" (Constant 12) Close")
