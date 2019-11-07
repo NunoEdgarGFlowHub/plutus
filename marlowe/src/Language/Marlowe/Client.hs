@@ -28,8 +28,7 @@ import qualified Language.PlutusTx.Prelude  as P
 import           Ledger                     (DataScript (..), PubKey (..), Slot (..), Tx, TxOut (..), interval,
                                              mkValidatorScript, pubKeyTxOut, scriptAddress, scriptTxIn, scriptTxOut,
                                              txOutRefs)
-import           Ledger.Ada                 (Ada)
-import qualified Ledger.Ada                 as Ada
+import           Ledger.Ada                 (Ada, adaValueOf, adaSymbol, adaToken, getLovelace)
 import           Ledger.Scripts             (RedeemerScript (..), ValidatorScript)
 import qualified Ledger.Typed.Scripts       as Scripts
 import qualified Ledger.Value               as Val
@@ -55,7 +54,7 @@ createContract contract = do
             marloweState = emptyState slot }
         ds = DataScript $ PlutusTx.toData marloweData
 
-        deposit = Ada.adaValueOf 1
+        deposit = adaValueOf 1
 
     (payment, change) <- createPaymentWithChange deposit
     let o = scriptTxOut deposit validator ds
@@ -79,7 +78,7 @@ deposit :: (
     -> m MarloweData
 deposit tx marloweData accountId amount = do
     pubKey <- ownPubKey
-    applyInputs tx marloweData [IDeposit accountId pubKey Ada.adaSymbol Ada.adaToken (Ada.getLovelace amount)]
+    applyInputs tx marloweData [IDeposit accountId pubKey adaSymbol adaToken (getLovelace amount)]
 
 
 {-| Notify a contract -}
@@ -137,7 +136,7 @@ applyInputs :: (
     -> [Input]
     -> m MarloweData
 applyInputs tx MarloweData{..} inputs = do
-    let depositAmount = Ada.adaValueOf 1
+    let depositAmount = adaValueOf 1
         depositPayment = Payment marloweCreator depositAmount
         redeemer = mkRedeemer inputs
         validator = validatorScript marloweCreator

@@ -178,7 +178,6 @@ data Bound = Bound Integer Integer
       or one of their wallets acting automatically.
 -}
 data Action = Deposit AccountId Party CurrencySymbol TokenName Value
-        --  | DepositAll AccountId Party Val.Value
             | Choice ChoiceId [Bound]
             | Notify Observation
   deriving stock (Show,Read,Generic,P.Eq,P.Ord)
