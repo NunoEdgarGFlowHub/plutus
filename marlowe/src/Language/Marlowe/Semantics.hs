@@ -274,9 +274,10 @@ data ReduceEffect = ReduceWithPayment Payment
 
 -- | Warning during 'reduceContractStep'
 data ReduceWarning = ReduceNoWarning
-                   | ReduceNonPositivePay AccountId Payee Integer
-                   | ReducePartialPay AccountId Payee Money Money
-                                   -- ^ src    ^ dest ^ paid ^ expected
+                   | ReduceNonPositivePay AccountId Payee CurrencySymbol TokenName Integer
+                   | ReducePartialPay AccountId Payee CurrencySymbol TokenName Integer Integer
+
+                                     -- ^ src    ^ dest                           ^ paid ^ expected
                    | ReduceShadowing ValueId Integer Integer
                                     -- oldVal ^  newVal ^
   deriving stock (Show)
@@ -297,7 +298,7 @@ data ReduceResult = ContractQuiescent [ReduceWarning] [Payment] State Contract
 
 -- | Warning of 'applyCases'
 data ApplyWarning = ApplyNoWarning
-                  | ApplyNonPositiveDeposit Party AccountId Integer
+                  | ApplyNonPositiveDeposit Party AccountId CurrencySymbol TokenName Integer
   deriving stock (Show)
 
 
@@ -315,10 +316,10 @@ data ApplyAllResult = ApplyAllSuccess [TransactionWarning] [Payment] State Contr
 
 
 -- | Warnings during transaction computation
-data TransactionWarning = TransactionNonPositiveDeposit Party AccountId Integer
-                        | TransactionNonPositivePay AccountId Payee Integer
-                        | TransactionPartialPay AccountId Payee Money Money
-                                               -- ^ src    ^ dest ^ paid ^ expected
+data TransactionWarning = TransactionNonPositiveDeposit Party AccountId CurrencySymbol TokenName Integer
+                        | TransactionNonPositivePay AccountId Payee CurrencySymbol TokenName Integer
+                        | TransactionPartialPay AccountId Payee CurrencySymbol TokenName Integer Integer
+                                                -- ^ src    ^ dest                            ^ paid ^ expected
                         | TransactionShadowing ValueId Integer Integer
                                                 -- oldVal ^  newVal ^
   deriving stock (Show, Generic)
@@ -514,7 +515,7 @@ reduceContractStep env state contract = case contract of
     Pay accId payee cur tok val cont -> let
         amountToPay = evalValue env state val
         in  if amountToPay <= 0
-            then Reduced (ReduceNonPositivePay accId payee amountToPay) ReduceNoPayment state cont
+            then Reduced (ReduceNonPositivePay accId payee cur tok amountToPay) ReduceNoPayment state cont
             else let
                 balance    = moneyInAccount accId (accounts state)
                 balanceOfToken = Val.valueOf balance cur tok
@@ -523,9 +524,7 @@ reduceContractStep env state contract = case contract of
                 newBalance = balance - paidMoney
                 newAccs = updateMoneyInAccount accId newBalance (accounts state)
                 warning = if paidAmount < amountToPay
-                          then let
-                            moneyToPay = Val.singleton cur tok amountToPay
-                            in ReducePartialPay accId payee paidMoney moneyToPay
+                          then ReducePartialPay accId payee cur tok paidAmount amountToPay
                           else ReduceNoWarning
                 (payment, finalAccs) = giveMoney payee paidMoney newAccs
                 in Reduced warning payment (state { accounts = finalAccs }) cont
@@ -583,7 +582,7 @@ applyCases env state input cases = case (input, cases) of
                 && amount == evalValue env state val
         then let
             warning = if amount > 0 then ApplyNoWarning
-                      else ApplyNonPositiveDeposit party2 accId2 amount
+                      else ApplyNonPositiveDeposit party2 accId2 cur2 tok2 amount
             money = Val.singleton cur1 tok1 amount
             newState = state { accounts = addMoneyToAccount accId1 money (accounts state) }
             in Applied warning newState cont
@@ -610,10 +609,10 @@ applyInput _ _ _ _                          = ApplyNoMatchError
 convertReduceWarnings :: [ReduceWarning] -> [TransactionWarning]
 convertReduceWarnings = foldr (\warn acc -> case warn of
     ReduceNoWarning -> acc
-    ReduceNonPositivePay accId payee amount ->
-        TransactionNonPositivePay accId payee amount : acc
-    ReducePartialPay accId payee paid expected ->
-        TransactionPartialPay accId payee paid expected : acc
+    ReduceNonPositivePay accId payee curr tok amount ->
+        TransactionNonPositivePay accId payee curr tok amount : acc
+    ReducePartialPay accId payee curr tok paid expected ->
+        TransactionPartialPay accId payee curr tok paid expected : acc
     ReduceShadowing valId oldVal newVal ->
         TransactionShadowing valId oldVal newVal : acc
     ) []
@@ -657,8 +656,8 @@ applyAllInputs env state contract inputs = let
     convertApplyWarning warn =
         case warn of
             ApplyNoWarning -> []
-            ApplyNonPositiveDeposit party accId amount ->
-                [TransactionNonPositiveDeposit party accId amount]
+            ApplyNonPositiveDeposit party accId curr tok amount ->
+                [TransactionNonPositiveDeposit party accId curr tok amount]
 
 
 -- | Extract necessary signatures from transaction inputs
@@ -864,7 +863,6 @@ instance Read ValueId where
 instance Pretty ValueId where
     prettyFragment (ValueId n) = prettyFragment n
 
-
 instance Eq Payee where
     {-# INLINABLE (==) #-}
     Account acc1 == Account acc2 = acc1 == acc2
@@ -880,10 +878,10 @@ instance Eq Payment where
 instance Eq ReduceWarning where
     {-# INLINABLE (==) #-}
     ReduceNoWarning == ReduceNoWarning = True
-    (ReduceNonPositivePay acc1 p1 a1) == (ReduceNonPositivePay acc2 p2 a2) =
-        acc1 == acc2 && p1 == p2 && a1 == a2
-    (ReducePartialPay acc1 p1 a1 e1) == (ReducePartialPay acc2 p2 a2 e2) =
-        acc1 == acc2 && p1 == p2 && a1 == a2 && e1 == e2
+    (ReduceNonPositivePay acc1 p1 cs1 tn1 a1) == (ReduceNonPositivePay acc2 p2 cs2 tn2 a2) =
+        acc1 == acc2 && p1 == p2 && cs1 == cs2 && tn1 == tn2 && a1 == a2
+    (ReducePartialPay acc1 p1 cs1 tn1 a1 e1) == (ReducePartialPay acc2 p2 cs2 tn2 a2 e2) =
+        acc1 == acc2 && p1 == p2 && cs1 == cs2 && tn1 == tn2 && a1 == a2 && e1 == e2
     (ReduceShadowing v1 old1 new1) == (ReduceShadowing v2 old2 new2) =
         v1 == v2 && old1 == old2 && new1 == new2
     _ == _ = False
