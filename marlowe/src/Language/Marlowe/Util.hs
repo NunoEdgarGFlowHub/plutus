@@ -11,12 +11,13 @@ import           Language.Marlowe.Semantics
 import qualified Language.PlutusTx.Prelude  as P
 import           Ledger                     (PubKey (..))
 import qualified Ledger.Value               as Val
+import           Ledger.Ada                 (adaSymbol, adaToken)
 
 instance IsString PubKey where
     fromString = pubKeyFromString
 
 instance IsString AccountId where
-    fromString s = AccountId 0 (fromString s)
+    fromString s = AccountId 0 (fromString s) adaSymbol adaToken
 
 instance IsString ValueId where
     fromString = ValueId . fromString
@@ -25,31 +26,31 @@ alicePubKey :: PubKey
 alicePubKey = PubKey "Alice"
 
 aliceAcc :: AccountId
-aliceAcc = AccountId 0 alicePubKey
+aliceAcc = AccountId 0 alicePubKey adaSymbol adaToken
 
 bobPubKey :: PubKey
 bobPubKey = PubKey "Bob"
 
 bobAcc :: AccountId
-bobAcc = AccountId 0 bobPubKey
+bobAcc = AccountId 0 bobPubKey adaSymbol adaToken
 
 carolPubKey :: PubKey
 carolPubKey = PubKey "Carol"
 
 carolAcc :: AccountId
-carolAcc = AccountId 0 carolPubKey
+carolAcc = AccountId 0 carolPubKey adaSymbol adaToken
 
 charliePubKey :: PubKey
 charliePubKey = PubKey "Charlie"
 
 charlieAcc :: AccountId
-charlieAcc = AccountId 0 charliePubKey
+charlieAcc = AccountId 0 charliePubKey adaSymbol adaToken
 
 evePubKey :: PubKey
 evePubKey = PubKey "Eve"
 
 eveAcc :: AccountId
-eveAcc = AccountId 0 evePubKey
+eveAcc = AccountId 0 evePubKey adaSymbol adaToken
 
 
 type AccountsDiff = Map Party Money
@@ -77,6 +78,6 @@ getAccountsDiff :: [Payment] -> [Input] -> AccountsDiff
 getAccountsDiff payments inputs =
     foldl' (\acc (p, m) -> addAccountsDiff p m acc) emptyAccountsDiff (incomes ++ outcomes)
   where
-    incomes  = [ (p,  Val.singleton cur tok m) | IDeposit _ p cur tok m <- inputs ]
+    incomes  = [ (p,  Val.singleton cur tok m) | IDeposit (AccountId _ _ cur tok) p m <- inputs ]
     outcomes = [ (p, P.negate m) | Payment p m  <- payments ]
 
