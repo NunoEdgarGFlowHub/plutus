@@ -74,11 +74,11 @@ deposit :: (
     => Tx
     -> MarloweData
     -> AccountId
-    -> Integer
+    -> Ada
     -> m MarloweData
 deposit tx marloweData accountId amount = do
     pubKey <- ownPubKey
-    applyInputs tx marloweData [IDeposit accountId pubKey amount]
+    applyInputs tx marloweData [IDeposit accountId pubKey adaSymbol adaToken (getLovelace amount)]
 
 
 {-| Notify a contract -}
@@ -193,7 +193,7 @@ applyInputs tx MarloweData{..} inputs = do
 
     return marloweData
   where
-    collectDeposits (IDeposit (AccountId _ _ cur tok) _ amount) = Val.singleton cur tok amount
+    collectDeposits (IDeposit _ _ cur tok amount) = Val.singleton cur tok amount
     collectDeposits _                    = P.zero
 
     totalIncome = foldMap collectDeposits inputs

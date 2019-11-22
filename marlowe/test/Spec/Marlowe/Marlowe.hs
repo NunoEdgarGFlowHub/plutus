@@ -28,7 +28,7 @@ import           Language.Marlowe
 import qualified Language.PlutusTx.AssocMap as AssocMap
 import qualified Language.PlutusTx.Prelude  as P
 import           Ledger                     hiding (Value)
-import           Ledger.Ada                 (adaSymbol, adaToken, adaValueOf)
+import           Ledger.Ada                 (adaOf, adaSymbol, adaToken, adaValueOf)
 import           Spec.Marlowe.Common
 import           Test.Tasty
 import           Test.Tasty.Hedgehog        (HedgehogTestLimit (..), testProperty)
@@ -67,7 +67,7 @@ getSignaturesTest :: IO ()
 getSignaturesTest = do
     let alicePk = walletPubKey alice
     let bobPk = walletPubKey bob
-    let deposit pk = IDeposit (AccountId 0 alicePk adaSymbol adaToken) pk 256_000000
+    let deposit pk = IDeposit (AccountId 0 alicePk) pk adaSymbol adaToken 256_000000
     let choice pk = IChoice (ChoiceId "choice" pk) 23
     let sigs = AssocMap.toList . getSignatures
     [] @=? sigs []
@@ -84,25 +84,25 @@ zeroCouponBondTest = checkMarloweTrace (MarloweScenario {
         [ (walletPubKey alice, adaValueOf 1000), (walletPubKey bob, adaValueOf 1000) ] }) $ do
     -- Init a contract
     let alicePk = walletPubKey alice
-        aliceAcc = AccountId 0 alicePk adaSymbol adaToken
+        aliceAcc = AccountId 0 alicePk
         bobPk = walletPubKey bob
         update = updateAll [alice, bob]
     update
 
     let zeroCouponBond = When [ Case
-            (Deposit aliceAcc alicePk (Constant 850_000_000))
-            (Pay aliceAcc (Party bobPk) (Constant 850_000_000)
+            (Deposit aliceAcc alicePk adaSymbol adaToken (Constant 850_000_000))
+            (Pay aliceAcc (Party bobPk) adaSymbol adaToken (Constant 850_000_000)
                 (When
-                    [ Case (Deposit aliceAcc bobPk (Constant 1000_000_000))
-                        (Pay aliceAcc (Party alicePk) (Constant 1000_000_000)
+                    [ Case (Deposit aliceAcc bobPk adaSymbol adaToken (Constant 1000_000_000))
+                        (Pay aliceAcc (Party alicePk) adaSymbol adaToken (Constant 1000_000_000)
                         Close)
                     ] (Slot 200) Close
                 ))] (Slot 100) Close
 
     let performs = performNotify [alice, bob]
     (tx, md) <- alice `performs` createContract zeroCouponBond
-    (tx, md) <- alice `performs` deposit tx md aliceAcc 850_000_000
-    bob `performs` deposit tx md aliceAcc 1000_000_000
+    (tx, md) <- alice `performs` deposit tx md aliceAcc (adaOf 850)
+    bob `performs` deposit tx md aliceAcc (adaOf 1000)
 
     assertOwnFundsEq alice (adaValueOf 1150)
     assertOwnFundsEq bob (adaValueOf 850)
@@ -114,7 +114,7 @@ trustFundTest = checkMarloweTrace (MarloweScenario {
         [ (walletPubKey alice, adaValueOf 1000), (walletPubKey bob, adaValueOf 1000) ] }) $ do
     -- Init a contract
     let alicePk = walletPubKey alice
-        aliceAcc = AccountId 0 alicePk adaSymbol adaToken
+        aliceAcc = AccountId 0 alicePk
         bobPk = walletPubKey bob
         update = updateAll [alice, bob]
     update
@@ -124,9 +124,9 @@ trustFundTest = checkMarloweTrace (MarloweScenario {
     let contract = When [
             Case (Choice chId [Bound 100_000000 1500_000000])
                 (When [Case
-                    (Deposit aliceAcc alicePk (ChoiceValue chId (Constant 0)))
+                    (Deposit aliceAcc alicePk adaSymbol adaToken (ChoiceValue chId (Constant 0)))
                         (When [Case (Notify (SlotIntervalStart `ValueGE` Constant 150))
-                            (Pay aliceAcc (Party bobPk)
+                            (Pay aliceAcc (Party bobPk) adaSymbol adaToken
                                 (ChoiceValue chId (Constant 0)) Close)]
                         (Slot 300) Close)
                     ] (Slot 200) Close)
@@ -136,7 +136,7 @@ trustFundTest = checkMarloweTrace (MarloweScenario {
     (tx, md) <- alice `performs` createContract contract
     (tx, md) <- alice `performs` applyInputs tx md
         [ IChoice chId 256_000000
-        , IDeposit aliceAcc alicePk 256_000000]
+        , IDeposit aliceAcc alicePk adaSymbol adaToken 256_000000]
     addBlocksAndNotify [alice, bob] 150
     bob `performs` notify tx md
 
@@ -150,14 +150,15 @@ makeProgressTest = checkMarloweTrace (MarloweScenario {
         [ (walletPubKey alice, adaValueOf 1000), (walletPubKey bob, adaValueOf 1000) ] }) $ do
     -- Init a contract
     let alicePk = walletPubKey alice
-        aliceAcc = AccountId 0 alicePk adaSymbol adaToken
+        aliceAcc = AccountId 0 alicePk
         bobPk = walletPubKey bob
         update = updateAll [alice, bob]
     update
 
     let contract = If (SlotIntervalStart `ValueLT` Constant 10)
-            (When [Case (Deposit aliceAcc alicePk (Constant 500_000000))
-                    (Pay aliceAcc (Party bobPk) (AvailableMoney aliceAcc) Close)
+            (When [Case (Deposit aliceAcc alicePk adaSymbol adaToken (Constant 500_000000))
+                    (Pay aliceAcc (Party bobPk) adaSymbol adaToken
+                        (AvailableMoney aliceAcc adaSymbol adaToken) Close)
                   ] (Slot 100) Close)
             Close
 
@@ -165,7 +166,7 @@ makeProgressTest = checkMarloweTrace (MarloweScenario {
     (tx, md) <- alice `performs` createContract contract
     addBlocksAndNotify [alice, bob] 5
     (tx, md) <- alice `performs` makeProgress tx md
-    void $ alice `performs` deposit tx md aliceAcc 500_000000
+    void $ alice `performs` deposit tx md aliceAcc (adaOf 500)
 
     assertOwnFundsEq alice (adaValueOf 500)
     assertOwnFundsEq bob (adaValueOf 1500)
@@ -264,11 +265,11 @@ showReadStuff = do
     assertEqual "alice" (fromString "alice" :: PubKey) (read "\"alice\"")
     assertEqual "slot" (Slot 123) (read "123")
     let contract = When [Case
-            (Deposit (AccountId 0 "investor" adaSymbol adaToken) "investor" (Constant 850))
-            (Pay (AccountId 0 "investor" adaSymbol adaToken) (Party "issuer") (Constant 850)
+            (Deposit (AccountId 0 "investor") "investor" adaSymbol adaToken (Constant 850))
+            (Pay (AccountId 0 "investor") (Party "issuer") adaSymbol adaToken (Constant 850)
                 (When [Case
-                    (Deposit (AccountId 0 "investor" adaSymbol adaToken) "issuer" (Constant 1000))
-                    (Pay (AccountId 0 "investor" adaSymbol adaToken) (Party "investor")
+                    (Deposit (AccountId 0 "investor") "issuer" adaSymbol adaToken (Constant 1000))
+                    (Pay (AccountId 0 "investor") (Party "investor") adaSymbol adaToken
                         (Constant 1000) Close)] 20 Close))] 10 Close
 
     let contract2 :: Contract = Let (ValueId "id") (Constant 12) Close
