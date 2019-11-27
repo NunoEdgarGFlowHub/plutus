@@ -30,7 +30,7 @@ import Halogen as H
 import Halogen.Blockly (BlocklyQuery, BlocklyMessage)
 import Language.Haskell.Interpreter (InterpreterError, InterpreterResult)
 import Marlowe.Holes (Holes, MarloweHole)
-import Marlowe.Semantics (AccountId, Action(..), Ada, Bound, ChoiceId, ChosenNum, Contract, Environment(..), Input, Party, Payment, PubKey, Slot, SlotInterval(..), State, TransactionError, _minSlot, boundFrom, emptyState, evalValue)
+import Marlowe.Semantics (AccountId, Action(..), Assets, Bound, ChoiceId, ChosenNum, Contract, Environment(..), Input, Party, Payment, PubKey, Slot, SlotInterval(..), State, Token, TransactionError, _minSlot, boundFrom, emptyState, evalValue)
 import Marlowe.Symbolic.Types.Response (Result)
 import Network.RemoteData (RemoteData)
 import Prelude (class Eq, class Ord, class Show, Unit, map, mempty, min, zero, (<<<))
@@ -170,7 +170,7 @@ _value :: forall s a. Lens' { value :: a | s } a
 _value = prop (SProxy :: SProxy "value")
 
 data ActionInputId
-  = DepositInputId AccountId Party
+  = DepositInputId AccountId Party Token
   | ChoiceInputId ChoiceId (Array Bound)
   | NotifyInputId
 
@@ -184,7 +184,7 @@ type MarloweState
     , transactionError :: Maybe TransactionError
     , state :: State
     , slot :: Slot
-    , moneyInContract :: Ada
+    , moneyInContract :: Assets
     , contract :: Maybe Contract
     , editorErrors :: Array Annotation
     , holes :: Holes
@@ -238,7 +238,7 @@ emptyMarloweState sn =
   , transactionError: Nothing
   , state: emptyState sn
   , slot: zero
-  , moneyInContract: zero
+  , moneyInContract: mempty
   , contract: Nothing
   , editorErrors: []
   , holes: mempty
@@ -251,7 +251,7 @@ type WebData
 -- | On the front end we need Actions however we also need to keep track of the current
 -- | choice that has been set for Choices
 data ActionInput
-  = DepositInput AccountId Party BigInteger
+  = DepositInput AccountId Party Token BigInteger
   | ChoiceInput ChoiceId (Array Bound) ChosenNum
   | NotifyInput
 
@@ -261,13 +261,13 @@ minimumBound bnds = case uncons (map boundFrom bnds) of
   Nothing -> zero
 
 actionToActionInput :: State -> Action -> Tuple ActionInputId ActionInput
-actionToActionInput state (Deposit accountId party value) =
+actionToActionInput state (Deposit accountId party token value) =
   let
     minSlot = state ^. _minSlot
 
     env = Environment { slotInterval: (SlotInterval minSlot minSlot) }
   in
-    Tuple (DepositInputId accountId party) (DepositInput accountId party (evalValue env state value))
+    Tuple (DepositInputId accountId party token) (DepositInput accountId party token (evalValue env state value))
 
 actionToActionInput _ (Choice choiceId bounds) = Tuple (ChoiceInputId choiceId bounds) (ChoiceInput choiceId bounds (minimumBound bounds))
 
